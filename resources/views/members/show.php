@@ -1,4 +1,7 @@
-<?php use App\Helpers\Format; ?>
+<?php 
+use App\Helpers\Format;
+use App\Helpers\Avatar;
+?>
 <style>
 .profile-hero{background:linear-gradient(135deg,#0a4033 0%,#136b55 60%,#1a8f6f 100%);border-radius:16px;padding:28px;color:#fff;position:relative;overflow:hidden;}
 .profile-hero::after{content:'';position:absolute;right:-40px;top:-40px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,0.06);}
@@ -51,11 +54,7 @@
 <div class="profile-hero mb-5">
   <div class="flex items-center gap-5">
     <div class="profile-avatar">
-        <?php if ($member['avatar']): ?>
-            <img src="<?= APP_URL ?>/storage/uploads/avatars/<?= htmlspecialchars($member['avatar']) ?>" alt="Avatar">
-        <?php else: ?>
-            <?= Format::initials($member['first_name'].' '.$member['last_name']) ?>
-        <?php endif; ?>
+        <?= Avatar::medium($member) ?>
     </div>
     <div class="flex-1 min-w-0">
       <h1 class="text-2xl font-bold mb-1"><?= htmlspecialchars($member['first_name'].' '.$member['middle_name'].' '.$member['last_name']) ?></h1>

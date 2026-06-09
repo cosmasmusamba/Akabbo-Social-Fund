@@ -1,5 +1,6 @@
 <?php
 use App\Helpers\Format;
+use App\Helpers\Avatar;
 $pageTitle   = 'Members';
 $activePage  = 'members';
 $breadcrumbs = ['Members' => null];
@@ -135,14 +136,7 @@ $breadcrumbs = ['Members' => null];
             <td><input type="checkbox" class="row-check" value="<?= $m['id'] ?>"></td>
             <td>
               <div class="flex items-center gap-3">
-                <?php if ($m['avatar']): ?>
-                  <img src="<?= APP_URL ?>/storage/uploads/avatars/<?= htmlspecialchars($m['avatar']) ?>"
-                       class="w-9 h-9 rounded-full object-cover border-2 border-slate-100" alt="">
-                <?php else: ?>
-                  <div class="avatar-circle w-9 h-9 text-xs">
-                    <?= Format::initials($m['first_name'].' '.$m['last_name']) ?>
-                  </div>
-                <?php endif; ?>
+                <?= Avatar::small($m) ?>
                 <div>
                   <a href="<?= APP_URL ?>/members/<?= $m['id'] ?>"
                      class="text-sm font-semibold text-slate-800 hover:text-green-700 transition-colors">

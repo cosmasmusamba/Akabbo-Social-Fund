@@ -99,21 +99,25 @@ class MemberController extends BaseController
             $this->jsonError('A member with this Passport Number already exists.', null, 409);
         }
 
+        // Start transaction – member number generation will happen inside it
         $this->db->beginTransaction();
+
         try {
-            // Handle avatar upload
+            // Generate member number INSIDE the transaction (no nested transaction)
+            $memberNo = \App\Helpers\MemberSequence::nextFormatted();
+
+            // Handle file uploads (these write to disk; if transaction rolls back,
+            // orphaned files may remain – acceptable for now, but consider temp storage)
             $avatarFile = null;
             if (!empty($_FILES['avatar']['name'])) {
                 $avatarFile = $this->handleAvatarUpload($_FILES['avatar']);
             }
 
-            // Handle ID front upload
             $idFrontFile = null;
             if (!empty($_FILES['id_front']['name'])) {
                 $idFrontFile = $this->handleDocumentUpload($_FILES['id_front'], 'id_front');
             }
 
-            // Handle ID back upload
             $idBackFile = null;
             if (!empty($_FILES['id_back']['name'])) {
                 $idBackFile = $this->handleDocumentUpload($_FILES['id_back'], 'id_back');
@@ -121,7 +125,7 @@ class MemberController extends BaseController
 
             // Build member record
             $memberData = [
-                'member_no'                 => \App\Helpers\MemberSequence::nextFormatted(),
+                'member_no'                 => $memberNo,
                 'first_name'                => $data['first_name'],
                 'last_name'                 => $data['last_name'],
                 'middle_name'               => $data['middle_name'] ?? null,
