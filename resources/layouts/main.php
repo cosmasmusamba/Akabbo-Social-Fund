@@ -6,6 +6,10 @@
   <meta name="csrf-token" content="<?= \App\Helpers\Security::generateCsrfToken() ?>">
   <title><?= htmlspecialchars($pageTitle ?? 'Dashboard') ?> — Akabbo Social Fund</title>
 
+  <!-- Favicon with fallback -->
+  <?php use App\Helpers\Avatar; ?>
+  <link rel="icon" href="<?= Avatar::favicon($settings ?? []) ?>" type="image/x-icon">
+
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,700;1,9..144,300&display=swap" rel="stylesheet">
@@ -94,7 +98,7 @@
     .user-avatar {
       width: 36px; height: 36px; border-radius: 50%;
       background: linear-gradient(135deg, var(--green-mid), var(--green-bright));
-      display: flex; align-items: center; justify-center: center;
+      display: flex; align-items: center; justify-content: center;
       font-size: 0.8rem; font-weight: 700; color: #fff;
       flex-shrink: 0;
     }
@@ -194,7 +198,7 @@
       transition: all 0.18s;
     }
     .form-control:focus { outline: none; border-color: var(--green-bright); background: #fff; box-shadow: 0 0 0 3px rgba(26,143,111,0.12); }
-    .form-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 18px; padding-right: 36px; }
+    .form-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E"); background-position: right 0.5rem center; background-repeat: no-repeat; background-size: 1.5em 1.5em; padding-right: 2.5rem; }
 
     /* ── Modals ──────────────────────────────────────────────────────── */
     .modal-overlay {
