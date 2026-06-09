@@ -434,7 +434,7 @@ A centralised approval engine that gates all significant financial actions.
 | **No self-approval** | Initiator cannot approve their own request |
 | **SLA deadline** | Each approval has a 24-hour due-by timestamp |
 | **Overdue flagging** | Requests past SLA are flagged red in the queue |
-| **Audit trail** | Every decision logged in `audit_logs` with notes, timestamp, IP |
+| **Audit trail** | Every decision logged in `audit_logs` with notes, timestamp, IP, device |
 | **Cascading execution** | On approval, the underlying action executes atomically |
 | **Rejection handling** | Referenced record status reverted gracefully |
 | **Queue filtering** | Filter by type (withdrawal/transfer/expense etc.) and status |
@@ -459,6 +459,8 @@ Every financial movement is recorded as an immutable transaction record.
 | `penalty` | Late payment penalty |
 | `transfer` | Internal fund transfer (debit + credit pair) |
 | `reversal` | Approved reversal |
+| `account_balance_check_fee` | Checked account balance |
+| `transaction_statement_fee` | Requested transaction statement |
 
 | Feature | Detail |
 |---------|--------|
