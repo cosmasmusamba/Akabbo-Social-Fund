@@ -1,0 +1,17 @@
+/* Akabbo Social Fund - Custom Stylesheet Overrides */
+/* Tailwind handles most styling; this file has custom-only additions */
+
+/* Smooth page transitions */
+.page-inner { animation: fadeIn 0.2s ease; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+
+/* Table responsive shadow on scroll */
+.overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+/* Print styles */
+@media print {
+  #sidebar, #topbar, .btn, .no-print { display: none !important; }
+  #mainContent { margin-left: 0 !important; }
+  .card { box-shadow: none !important; border: 1px solid #e2e8f0 !important; }
+  body { background: white !important; }
+}

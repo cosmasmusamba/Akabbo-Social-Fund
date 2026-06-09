@@ -1,0 +1,12 @@
+RewriteEngine On
+
+# Skip if already pointing at a real file
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# Skip if already routed into public/
+RewriteCond %{REQUEST_URI} /public/
+RewriteRule ^ - [L]
+
+# Route everything else into public/
+RewriteRule ^(.*)$ public/$1 [L,QSA]
