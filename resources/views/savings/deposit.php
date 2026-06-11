@@ -1,4 +1,11 @@
-<?php use App\Helpers\Format; $pageTitle='Record Deposit'; $activePage='savings'; $breadcrumbs=['Savings'=>APP_URL.'/savings','Deposit'=>null]; ?>
+<?php 
+use App\Helpers\Avatar;
+use App\Helpers\Format;
+$pageTitle='Record Deposit';
+$activePage='savings';
+$breadcrumbs=['Savings'=>APP_URL.'/savings','Deposit'=>null];
+?>
+
 <div class="max-w-2xl mx-auto">
   <div class="flex items-center justify-between mb-5">
     <div><h1 class="text-xl font-bold text-slate-800">Record Deposit</h1><p class="text-sm text-slate-400 mt-0.5">Record a member savings deposit</p></div>
@@ -6,7 +13,7 @@
   </div>
   <div class="card">
     <div class="card-body">
-      <form id="depositForm" data-ajax="true" data-reload="true">
+      <form id="depositForm">
         <input type="hidden" name="csrf_token" value="<?= \App\Helpers\Security::generateCsrfToken() ?>">
         <input type="hidden" name="savings_account_id" id="savings_account_id" value="<?= htmlspecialchars($_GET['account']??'') ?>">
         <div class="mb-5">
@@ -20,7 +27,7 @@
         </div>
         <div id="depMemberInfo" class="<?= $member?'':'hidden' ?> mb-5 p-4 rounded-xl bg-emerald-50 border border-emerald-200">
           <div class="flex items-center gap-3">
-            <div class="avatar-circle w-10 h-10" id="depAvatar"><?= $member?Format::initials($member['first_name'].' '.$member['last_name']):'?' ?></div>
+            <div class="avatar-circle w-10 h-10" id="depAvatar"><?= Avatar::medium($member) ?></div>
             <div><div class="font-bold text-slate-800" id="depName"><?= $member?htmlspecialchars($member['first_name'].' '.$member['last_name']):'' ?></div><div class="text-sm text-slate-500" id="depNo"><?= $member?htmlspecialchars($member['member_no']):'' ?></div></div>
           </div>
           <div class="mt-3 pt-3 border-t border-emerald-200 flex gap-6">
@@ -37,10 +44,6 @@
             <select name="payment_method" class="form-control form-select" required>
               <option value="cash">Cash</option><option value="mobile_money">Mobile Money</option><option value="bank_transfer">Bank Transfer</option><option value="cheque">Cheque</option>
             </select>
-          </div>
-          <div>
-            <label class="form-label required">Transaction Date</label>
-            <input type="date" name="transaction_date" class="form-control" value="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d') ?>" required>
           </div>
           <div class="col-span-2">
             <label class="form-label">External Reference</label>
@@ -84,8 +87,41 @@ function selectDepMember(m){
   document.getElementById('depMemberInfo').classList.remove('hidden');
 }
 document.addEventListener('click',e=>{if(!document.getElementById('depMemberWrap').contains(e.target))document.getElementById('depMemberResults').classList.add('hidden');});
-document.getElementById('depositForm').addEventListener('submit',async function(e){
+
+// REPLACE the form submit handler with this:
+document.getElementById('depositForm').addEventListener('submit', async function(e) {
   e.preventDefault();
-  await window.submitForm(this,{loadingText:'Recording…',onSuccess:r=>{window.showToast('success',r.message);setTimeout(()=>location.reload(),1000);}});
+  const btn = this.querySelector('button[type="submit"]');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Recording...';
+
+  const formData = new FormData(this);
+  try {
+    const response = await fetch('<?= APP_URL ?>/savings/deposit', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: formData
+    });
+    const data = await response.json();
+    if (data.success) {
+      window.showToast('success', data.message);
+      // Redirect if provided, otherwise reload the page
+      if (data.data && data.data.redirect) {
+        setTimeout(() => { window.location.href = data.data.redirect; }, 1000);
+      } else {
+        setTimeout(() => { location.reload(); }, 1000);
+      }
+    } else {
+      window.showToast('error', data.message || 'Deposit failed.');
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  } catch (err) {
+    console.error(err);
+    window.showToast('error', 'Network error. Check console.');
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
 });
 </script>
