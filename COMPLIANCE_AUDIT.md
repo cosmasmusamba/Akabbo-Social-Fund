@@ -37,16 +37,8 @@ echo Avatar::orgLogo($settings);       // With fallback
 
 ### 🚨 **Current Status: NON-COMPLIANT**
 
-The following views use **inline image code** and need migration:
+Most views use **inline image code** and need migration: Review all.
 
-#### **Files Requiring Updates:**
-- `resources/views/members/index.php` - Member list avatars
-- `resources/views/members/show.php` - Member profile
-- `resources/views/loans/index.php` - Loan list
-- `resources/views/dashboard/index.php` - Dashboard widgets
-- `resources/views/approvals/index.php` - Approval queue
-- `resources/views/reports/**/*.php` - Report views
-- `resources/layouts/main.php` - Sidebar/header logo
 
 **Pattern to Replace:**
 ```php

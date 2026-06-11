@@ -121,6 +121,8 @@ resources/layouts/main.php ← Sidebar + topbar shell
 - **CSRF on every state-change** — hidden token + X-CSRF-Token header for AJAX
 - **Soft deletes** — members, loans, expenses moved to Trash, never hard-deleted immediately
 - **Atomic member sequences** — `SELECT … FOR UPDATE` prevents duplicate member numbers during concurrent imports
+- **Reusable helpers** — sharable utilities reused acros views
+- **Approval** — all transactions with funds out should apply Approval workflow (withdraw, loan requests, disbursments, reversals, grants, etc)
 
 ---
 
