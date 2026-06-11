@@ -1,0 +1,160 @@
+akabbo/
+├── COMPLIANCE_AUDIT.md
+├── README.md
+├── app
+│   ├── Controllers
+│   │   ├── Approvalcontroller.php
+│   │   ├── AuditController.php
+│   │   ├── AuthController.php
+│   │   ├── BaseController.php
+│   │   ├── DashboardController.php
+│   │   ├── Expensecontroller.php
+│   │   ├── Fundtransfercontroller.php
+│   │   ├── GroupController.php
+│   │   ├── ImportController.php
+│   │   ├── LoanController.php
+│   │   ├── LoanProductController.php
+│   │   ├── MemberController.php
+│   │   ├── NotificationController.php
+│   │   ├── ReportController.php
+│   │   ├── SavingsController.php
+│   │   ├── SearchController.php
+│   │   ├── SettingsController.php
+│   │   ├── Sharecontroller.php
+│   │   ├── Socialfundfeecontroller.php
+│   │   ├── TransactionController.php
+│   │   ├── TrashController.php
+│   │   └── UserController.php
+│   ├── Helpers
+│   │   ├── Avatar.php
+│   │   ├── Format.php
+│   │   ├── Membersequence.php
+│   │   └── Security.php
+│   ├── Models
+│   │   ├── Approval.php
+│   │   ├── BaseModel.php
+│   │   ├── Expense.php
+│   │   ├── Group.php
+│   │   ├── Loan.php
+│   │   ├── LoanProduct.php
+│   │   ├── Member.php
+│   │   ├── SavingsAccount.php
+│   │   ├── Share.php
+│   │   ├── Socialfundfee.php
+│   │   └── Transaction.php
+│   └── Services
+│       └── AuthService.php
+├── config
+│   ├── config.php
+│   └── database.php
+├── database
+│   ├── migration_branding.sql
+│   ├── migration_patch3.sql
+│   └── schema.sql
+├── public
+│   ├── assets
+│   │   ├── css
+│   │   │   └── app.css
+│   │   └── js
+│   │       ├── ajax.js
+│   │       └── app.js
+│   └── index.php
+├── resources
+│   ├── layouts
+│   │   └── main.php
+│   └── views
+│       ├── audit
+│       │   ├── index.php
+│       │   └── show.php
+│       ├── auth
+│       │   ├── forgot-password.php
+│       │   ├── login.php
+│       │   └── reset-password.php
+│       ├── dashboard
+│       │   └── index.php
+│       ├── errors
+│       │   └── 404.php
+│       ├── groups
+│       │   ├── create.php
+│       │   ├── edit.php
+│       │   ├── index.php
+│       │   └── show.php
+│       ├── import
+│       │   └── index.php
+│       ├── loan-products
+│       │   ├── create.php
+│       │   ├── edit.php
+│       │   └── index.php
+│       ├── loans
+│       │   ├── create.php
+│       │   ├── edit.php
+│       │   ├── index.php
+│       │   └── show.php
+│       ├── members
+│       │   ├── create.php
+│       │   ├── edit.php
+│       │   ├── index.php
+│       │   ├── show.php
+│       │   └── statement.php
+│       ├── notifications
+│       │   └── index.php
+│       ├── reports
+│       │   ├── cash-flow.php
+│       │   ├── index.php
+│       │   ├── loans.php
+│       │   ├── members.php
+│       │   ├── savings.php
+│       │   └── transactions.php
+│       ├── savings
+│       │   ├── deposit.php
+│       │   ├── index.php
+│       │   ├── show.php
+│       │   ├── statement.php
+│       │   ├── transfer.php
+│       │   └── withdraw.php
+│       ├── settings
+│       │   └── index.php
+│       ├── shares
+│       │   ├── create.php
+│       │   └── index.php
+│       ├── social-fund
+│       │   ├── create.php
+│       │   ├── index.php
+│       │   └── payments.php
+│       ├── transactions
+│       │   ├── index.php
+│       │   └── show.php
+│       ├── transfers
+│       │   └── index.php
+│       ├── trash
+│       │   └── index.php
+│       └── users
+│           ├── change-password.php
+│           ├── create.php
+│           ├── index.php
+│           ├── profile.php
+│           └── show.php
+├── routes
+│   └── web.php
+└── storage
+    └── uploads
+        ├── avatars
+        │   ├── avatar_6a1c7b643917f.jpg
+        │   ├── avatar_6a1ec7dc45f72.jpg
+        │   ├── avatar_6a1efa8d952e4.png
+        │   ├── avatar_6a1f08e0e14a0.jpg
+        │   ├── avatar_6a287510b769c.jpg
+        │   ├── group_6a1fff797de6d.jpeg
+        │   ├── group_6a2000f6912d9.jpeg
+        │   └── group_6a2001f720ffd.jpeg
+        ├── documents
+        ├── kyc
+        │   ├── id_back_6a1ecfd0a71ce.jpg
+        │   ├── id_back_6a1f08e0e2aca.jpg
+        │   ├── id_back_6a28722691bfb.jpg
+        │   ├── id_back_6a28723b67bf4.jpg
+        │   ├── id_front_6a1ecfd0a61e9.jpg
+        │   ├── id_front_6a1f08e0e1e36.jpg
+        │   ├── id_front_6a28722690d91.jpg
+        │   └── id_front_6a28723b67956.jpg
+        └── logos
