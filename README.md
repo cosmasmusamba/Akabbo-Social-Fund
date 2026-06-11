@@ -742,6 +742,7 @@ akabbo/
 │   │   └── AuthService.php            ← Login, session, permissions, audit
 │   ├── Helpers/
 │   │   ├── Security.php               ← CSRF, XSS, hashing, upload validation
+│   │   ├── Avatar.php                 ← Provides consistent avatar/image rendering with fallback to initials
 │   │   ├── Format.php                 ← Currency, dates, status pills, initials
 │   │   └── MemberSequence.php         ← Atomic conflict-free member numbering
 │   └── Libraries/                     ← (reserved for future third-party wrappers)

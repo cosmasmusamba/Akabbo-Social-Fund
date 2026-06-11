@@ -28,7 +28,7 @@ class Format
      */
     public static function currencyCompact(float $amount): string
     {
-        $symbol = DEFAULT_CURRENCY_SYMBOL;
+        $symbol = Settings::get('currency_symbol') ?? DEFAULT_CURRENCY_SYMBOL;
         if (abs($amount) >= 1_000_000_000) {
             return $symbol . ' ' . number_format($amount / 1_000_000_000, 1) . 'B';
         }
