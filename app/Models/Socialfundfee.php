@@ -35,7 +35,6 @@ class SocialFundFee extends BaseModel
         $fee = $this->find($feeId);
         if (!$fee) throw new \RuntimeException("Fee ID {$feeId} not found.");
 
-        // Only active members matching applies_to condition
         $memberSql = "SELECT m.id FROM members m";
         if ($fee['applies_to'] === 'shareholders') {
             $memberSql .= " WHERE m.status='active' AND m.is_shareholder=1 AND m.deleted_at IS NULL";
@@ -73,7 +72,6 @@ class SocialFundFee extends BaseModel
         $payment = $this->db->fetchOne("SELECT * FROM social_fund_fee_payments WHERE id=?", [$paymentId]);
         if (!$payment) throw new \RuntimeException("Payment record not found.");
 
-        $total    = $amountPaid + $penaltyPaid;
         $newStatus = ($amountPaid >= $payment['amount_due']) ? 'paid' : 'partial';
 
         $this->db->execute("

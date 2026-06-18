@@ -10,6 +10,7 @@ namespace App\Models;
 class Share extends BaseModel
 {
     protected string $table = 'member_shares';
+    protected bool $useSoftDelete = false; // ✅ Correctly disabled
 
     // ── Share config cache ───────────────────────────────────────
     private ?array $config = null;
@@ -58,12 +59,6 @@ class Share extends BaseModel
     }
 
     // ── Loan privileges for shareholders ─────────────────────────
-    /**
-     * Returns adjusted loan terms for a member based on share holdings.
-     * Shareholders receive discounted interest rate + higher multiplier.
-     *
-     * @return array ['interest_rate'=>float, 'multiplier'=>int, 'is_shareholder'=>bool]
-     */
     public function getLoanPrivileges(int $memberId, float $baseRate, int $baseMultiplier): array
     {
         if (!$this->isShareholder($memberId)) {
@@ -80,7 +75,6 @@ class Share extends BaseModel
         $adjRate  = max(0, $baseRate - $discount);
         $adjMult  = $baseMultiplier + (int)$cfg['loan_multiplier_bonus'];
 
-        // Extra discount for large shareholders (> 50 shares)
         $shares = (int)$this->db->fetchColumn(
             "SELECT shares_held FROM member_shares WHERE member_id = ?", [$memberId]
         );
@@ -106,6 +100,7 @@ class Share extends BaseModel
     // ── Analytics ────────────────────────────────────────────────
     public function getSummaryStats(): array
     {
+        // ✅ FIX: Removed "WHERE deleted_at IS NULL" since this table doesn't support soft deletes
         return $this->db->fetchOne("
             SELECT
                 COUNT(*)                        AS total_shareholders,
@@ -143,9 +138,11 @@ class Share extends BaseModel
             LIMIT $limit OFFSET $offset
         ", $params);
 
-        return ['data' => $data, 'total' => $total, 'page' => $page,
-                'per_page' => $limit, 'last_page' => (int)ceil($total / $limit),
-                'from' => $total > 0 ? $offset + 1 : 0, 'to' => min($offset + $limit, $total)];
+        return [
+            'data' => $data, 'total' => $total, 'page' => $page,
+            'per_page' => $limit, 'last_page' => (int)ceil($total / $limit),
+            'from' => $total > 0 ? $offset + 1 : 0, 'to' => min($offset + $limit, $total)
+        ];
     }
 
     public function getTransactions(int $page = 1, int $limit = 25, array $filters = []): array
@@ -187,9 +184,11 @@ class Share extends BaseModel
             LIMIT $limit OFFSET $offset
         ", $params);
 
-        return ['data' => $data, 'total' => $total, 'page' => $page,
-                'per_page' => $limit, 'last_page' => (int)ceil($total / $limit),
-                'from' => $total > 0 ? $offset + 1 : 0, 'to' => min($offset + $limit, $total)];
+        return [
+            'data' => $data, 'total' => $total, 'page' => $page,
+            'per_page' => $limit, 'last_page' => (int)ceil($total / $limit),
+            'from' => $total > 0 ? $offset + 1 : 0, 'to' => min($offset + $limit, $total)
+        ];
     }
 
     public function getMonthlyReport(): array

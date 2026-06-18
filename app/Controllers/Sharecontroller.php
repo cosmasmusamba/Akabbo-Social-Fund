@@ -1,327 +1,296 @@
 <?php
+// We should notify both approver and applicant use (dispatch instead of sendToUser) with relevant messages for all actions of this contoller and any other event of success and failure. Avoid using default `prompt` instead use modals. Ensure to use ApprovalController for DRY and consistence. Enforce logAudit and (RBAC + IDOR). Enforce audit COMPLIANCE_AUDIT.md 6. Share Management, 13. Pending Commitment Protection. Determine the user's data scope (Global, Group, Personal, or None). Prevent overdraft if so, processes it a loan with users concent to terms with other loan mechanisms applicable.
 namespace App\Controllers;
 
 use App\Models\Share;
 use App\Models\Approval;
 use App\Helpers\Format;
-use Database;
+use App\Services\NotificationService;
 
-/**
- * AKABBO SOCIAL FUND — Share Controller
- *
- * Manages share issuance, purchases, transfers, dividends,
- * and shareholder loan-privilege integration.
- */
 class ShareController extends BaseController
 {
-    private Share    $model;
+    private Share $model;
+    private NotificationService $notif;
     private Approval $approval;
-    private Database $db;
 
     public function __construct()
     {
         parent::__construct();
         $this->auth->requireAuth();
-        $this->model    = new Share();
-        $this->approval = new Approval();
-        $this->db       = Database::getInstance();
+        $this->model = new Share();
+        $this->notif = new NotificationService();
+        $this->approval = new Approval(); 
     }
 
-    // ── Shareholder list ─────────────────────────────────────────
+    // ── CRUD METHODS ───────────────────────────────────────────────
+
     public function index(): void
     {
-        $this->auth->requirePermission('shares.view');
+        // ENFORCE: Centralized Scope Gatekeeper
+        $perms = ['global' => 'shares.view', 'group' => 'groups.view_members', 'personal' => 'shares.view_own'];
+        $this->requireScopeAccess($perms, 'You do not have permission to view shares.');
+        
+        $scope = $this->resolveDataScope($perms);
+
         ['page' => $page, 'limit' => $limit] = $this->getPaginationParams();
+        
+        $filters = [
+            'search' => $this->getQuery('search', ''),
+        ];
 
-        $filters = ['search' => $this->getQuery('search', '')];
-        $result  = $this->model->getShareholdersList($page, $limit, $filters);
-        $stats   = $this->model->getSummaryStats();
-        $config  = $this->model->getConfig();
-        $settings = $this->getSettings();
-        $unreadNotifications = $this->getUnread();
+        // ENFORCE: Pass scope to model to filter data at the database level
+        $result = $this->model->getShareholdersList($page, $limit, $filters, $scope);
+        $stats  = $this->model->getSummaryStats($scope);
+        $config = $this->model->getConfig();
 
-        $pageTitle   = 'Shares & Shareholders';
-        $activePage  = 'shares';
-        $breadcrumbs = ['Shares' => null];
+        // ENFORCE: Audit log for viewing dashboard
+        $this->logAudit('shares_viewed', 'shares', null, null, "Viewed shares dashboard");
 
-        $this->view('shares/index', compact(
-            'result','stats','config','settings','pageTitle','activePage','breadcrumbs','unreadNotifications'
+        $this->view('shares/index', array_merge(
+            $this->prepareViewData('Shares & Shareholders', 'shares'),
+            ['result' => $result, 'stats' => $stats, 'config' => $config]
         ));
     }
 
-    // ── Issue / purchase shares ───────────────────────────────────
     public function create(): void
     {
-        $this->auth->requirePermission('shares.manage');
-        $members  = $this->db->fetchAll(
-            "SELECT id, member_no, first_name, last_name FROM members WHERE status='active' AND deleted_at IS NULL ORDER BY first_name"
-        );
-        $config   = $this->model->getConfig();
-        $settings = $this->getSettings();
-        $unreadNotifications = $this->getUnread();
+        // ENFORCE: Centralized Scope Gatekeeper
+        $perms = ['global' => 'shares.manage', 'group' => 'groups.view_members', 'personal' => 'shares.view_own'];
+        $this->requireScopeAccess($perms, 'You do not have permission to issue shares.');
+        
+        $scope = $this->resolveDataScope($perms);
+        $config = $this->model->getConfig();
+        
+        $prefillMember = null;
+        $memberId = $this->getQuery('member');
+        if ($memberId) {
+            $prefillMember = $this->db->fetchOne(
+                "SELECT id, member_no, CONCAT(first_name,' ',last_name) AS full_name, phone 
+                 FROM members WHERE id = ? AND status='active'", 
+                [(int)$memberId]
+            );
+            
+            // ENFORCE: IDOR Guard for prefill member
+            if ($prefillMember && !$this->canAccessMemberRecord((int)$prefillMember['id'])) {
+                $prefillMember = null; // Hide member if no permission
+            }
+        }
 
-        $pageTitle   = 'Issue Shares';
-        $activePage  = 'shares';
-        $breadcrumbs = ['Shares' => APP_URL.'/shares', 'Issue' => null];
-
-        $this->view('shares/create', compact(
-            'members','config','settings','pageTitle','activePage','breadcrumbs','unreadNotifications'
+        $this->view('shares/create', array_merge(
+            $this->prepareViewData('Issue Shares', 'shares', ['Shares' => APP_URL.'/shares', 'Issue' => null]),
+            ['config' => $config, 'prefillMember' => $prefillMember, 'scope' => $scope]
         ));
     }
 
     public function store(): void
     {
-        $this->auth->requirePermission('shares.manage');
+        // ENFORCE: Centralized Scope Gatekeeper
+        $perms = ['global' => 'shares.manage', 'group' => 'groups.view_members', 'personal' => 'shares.view_own'];
+        $this->requireScopeAccess($perms, 'You do not have permission to issue shares.');
         $this->verifyCsrf();
-
-        $data    = $this->getPost();
-        $missing = $this->validateRequired($data, ['member_id','shares_qty','transaction_date','notes']);
+        
+        $data = $this->getPost();
+        $missing = $this->validateRequired($data, ['member_id', 'shares_qty', 'payment_method', 'transaction_date', 'notes']);
         if ($missing) {
-            $this->jsonError('Required fields missing.', array_fill_keys($missing, 'Required'), 422);
+            $this->jsonError('Please fill in all required fields.', array_fill_keys($missing, 'Required'), 422);
         }
-        if (empty(trim($data['notes']))) {
-            $this->jsonError('Notes are mandatory for share transactions.', null, 422);
+        
+        $memberId = (int)$data['member_id'];
+        
+        // Fetch member to validate existence and get user_id for notifications
+        $member = $this->db->fetchOne("SELECT id, first_name, user_id, member_no FROM members WHERE id = ? AND status = 'active'", [$memberId]);
+        if (!$member) {
+            $this->jsonError('Invalid or inactive member.', null, 404);
         }
 
-        $memberId  = (int)$data['member_id'];
-        $qty       = (int)$data['shares_qty'];
-        $config    = $this->model->getConfig();
-        $parValue  = (float)$config['par_value'];
-        $total     = $qty * $parValue;
-
-        $member = $this->db->fetchOne("SELECT * FROM members WHERE id=? AND deleted_at IS NULL", [$memberId]);
-        if (!$member) $this->jsonError('Member not found.', null, 404);
-
-        // Validate share limits
-        $existing = $this->model->getByMember($memberId);
-        $currentShares = $existing ? (int)$existing['shares_held'] : 0;
-        if (($currentShares + $qty) > (int)$config['max_shares_per_member']) {
-            $this->jsonError("Member would exceed maximum of {$config['max_shares_per_member']} shares.", null, 422);
+        // ENFORCE: IDOR Guard
+        if (!$this->canAccessMemberRecord($memberId)) {
+            $this->jsonError('You do not have permission to issue shares for this member.', null, 403);
         }
+
+        $qty      = (int)$data['shares_qty'];
+        $config   = $this->model->getConfig();
+        $amount   = $qty * (float)$config['par_value'];
+        
+        if ($qty < ($config['min_shares'] ?? 1)) {
+            $this->jsonError("Minimum shares to purchase is {$config['min_shares']}.", null, 422);
+        }
+
+        // COMPLIANCE: AUDIT SEC 13 - Pending Commitment Protection
+        // Share purchases remain 'pending' and do not affect the member's financial balances 
+        // until the ApprovalController executes them.
 
         $this->db->beginTransaction();
         try {
             $ref = $this->model->generateRef();
-
-            // Create share transaction record
+            
+            // 1. Create the pending transaction record
             $txnId = (int)$this->db->insert("
                 INSERT INTO share_transactions
-                    (txn_ref, member_id, txn_type, shares_qty, par_value, total_amount,
-                     notes, payment_method, transaction_date, status, created_by)
-                VALUES (?, ?, 'purchase', ?, ?, ?, ?, ?, ?, 'pending', ?)
-            ", [$ref, $memberId, $qty, $parValue, $total,
-                $data['notes'], $data['payment_method'] ?? 'cash',
-                $data['transaction_date'], $_SESSION['user_id']]);
+                (txn_ref, member_id, txn_type, shares_qty, total_amount, payment_method, transaction_date, notes, status, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            ", [
+                $ref, $memberId, 'purchase', $qty, $amount, $data['payment_method'],
+                $data['transaction_date'], $data['notes'], $_SESSION['user_id']
+            ]);
 
-            // Create approval request (shares always require approval)
-            $approvalId = $this->approval->request(
-                'share_transaction', $txnId, $ref, $total,
+            // 2. DRY: Route through centralized approval engine (Audit Sec 6)
+            $this->approval->request(
+                'share_transaction',
+                $txnId,
+                $ref,
+                $amount,
                 $_SESSION['user_id'],
-                "Share purchase: {$qty} shares @ " . Format::currency($parValue) . " each. " . $data['notes']
+                "Share purchase request for {$qty} shares. Payment method: {$data['payment_method']}. Notes: {$data['notes']}"
             );
+            
+            // 3. ENFORCE: Notify Approvers
+            $this->notif->notifyApprovers('share_transaction', $ref, $amount, $data['notes']);
 
-            $this->auth->logAudit($_SESSION['user_id'], 'share_purchase_requested', 'shares',
-                $txnId, 'ShareTransaction', "Share purchase request {$ref} for member ID {$memberId}: {$qty} shares");
-
-            $this->db->commit();
-            $this->jsonSuccess(
-                ['txn_id' => $txnId, 'redirect' => APP_URL . '/shares'],
-                "Share purchase request {$ref} submitted for approval."
-            );
-
-        } catch (\Exception $e) {
-            $this->db->rollback();
-            $this->jsonError('Failed to create share transaction: ' . $e->getMessage(), null, 500);
-        }
-    }
-
-    // ── Approve share transaction ─────────────────────────────────
-    public function approveTransaction(int $id): void
-    {
-        $this->auth->requirePermission('shares.approve');
-        $this->verifyCsrf();
-
-        $data  = $this->getPost();
-        $notes = trim($data['approval_notes'] ?? '');
-        if (empty($notes)) {
-            $this->jsonError('Approval notes are mandatory.', null, 422);
-        }
-
-        $txn = $this->db->fetchOne("SELECT * FROM share_transactions WHERE id=?", [$id]);
-        if (!$txn || $txn['status'] !== 'pending') {
-            $this->jsonError('Transaction not found or already processed.', null, 400);
-        }
-
-        $this->db->beginTransaction();
-        try {
-            // Update transaction status
-            $this->db->execute("
-                UPDATE share_transactions
-                SET status='completed', approved_by=?, approved_at=NOW(), approval_notes=?, updated_at=NOW()
-                WHERE id=?
-            ", [$_SESSION['user_id'], $notes, $id]);
-
-            // Update or create member_shares record
-            $existing = $this->model->getByMember($txn['member_id']);
-            if ($existing) {
-                $this->db->execute("
-                    UPDATE member_shares
-                    SET shares_held    = shares_held + ?,
-                        total_invested = total_invested + ?,
-                        updated_at     = NOW()
-                    WHERE member_id = ?
-                ", [$txn['shares_qty'], $txn['total_amount'], $txn['member_id']]);
-            } else {
-                $this->db->execute("
-                    INSERT INTO member_shares (member_id, shares_held, total_invested, share_date, status, created_by)
-                    VALUES (?, ?, ?, ?, 'active', ?)
-                ", [$txn['member_id'], $txn['shares_qty'], $txn['total_amount'],
-                    $txn['transaction_date'], $_SESSION['user_id']]);
-            }
-
-            // Update member is_shareholder flag
-            $this->db->execute("
-                UPDATE members SET is_shareholder=1, shares_held=(
-                    SELECT COALESCE(SUM(shares_qty),0) FROM share_transactions
-                    WHERE member_id=? AND txn_type='purchase' AND status='completed'
-                ) WHERE id=?
-            ", [$txn['member_id'], $txn['member_id']]);
-
-            // Mark approval as done
-            $approvalRecord = $this->approval->getForRecord('share_transaction', $id);
-            if ($approvalRecord) {
-                $this->approval->approve($approvalRecord['id'], $_SESSION['user_id'], $notes);
-            }
-
-            // Record savings deduction transaction if payment method is deduction
-            if ($txn['payment_method'] === 'deduction') {
-                $savAcc = $this->db->fetchOne(
-                    "SELECT id, balance FROM savings_accounts WHERE member_id=? AND status='active' ORDER BY id LIMIT 1",
-                    [$txn['member_id']]
+            // 4. ENFORCE: Notify the applicant (Member) via multi-channel dispatch
+            if (!empty($member['user_id'])) {
+                $this->notif->dispatch(
+                    (int)$member['user_id'],
+                    'share_purchase_requested',
+                    'Share Purchase Request Submitted',
+                    "Dear {$member['first_name']}, your request to purchase {$qty} shares for " . Format::currency($amount) . " has been submitted and is pending approval."
                 );
-                if ($savAcc && (float)$savAcc['balance'] >= (float)$txn['total_amount']) {
-                    $newBal = (float)$savAcc['balance'] - (float)$txn['total_amount'];
-                    $this->db->execute("UPDATE savings_accounts SET balance=? WHERE id=?", [$newBal, $savAcc['id']]);
-                    $txnRef = 'TXN-' . strtoupper(uniqid());
-                    $this->db->execute("
-                        INSERT INTO transactions
-                            (txn_ref, txn_type, amount, member_id, savings_account_id, payment_method,
-                             description, balance_before, balance_after, transaction_date, status, created_by)
-                        VALUES (?, 'withdrawal', ?, ?, ?, 'internal', ?, ?, ?, ?, 'completed', ?)
-                    ", [$txnRef, $txn['total_amount'], $txn['member_id'], $savAcc['id'],
-                        "Share purchase deduction: {$txn['txn_ref']}",
-                        $savAcc['balance'], $newBal, date('Y-m-d'), $_SESSION['user_id']]);
-                }
             }
 
-            $this->auth->logAudit($_SESSION['user_id'], 'share_transaction_approved', 'shares',
-                $id, 'ShareTransaction', "Approved share transaction {$txn['txn_ref']}: {$notes}");
-
+            $this->logAudit('share_purchase_requested', 'shares', $txnId, 'ShareTransaction',
+                "Requested {$qty} shares for member #{$memberId}", null, json_encode([
+                    'member_id' => $memberId, 'qty' => $qty, 'amount' => $amount, 'status' => 'pending'
+                ]));
+                
             $this->db->commit();
-            $this->jsonSuccess(null, "Share transaction {$txn['txn_ref']} approved successfully.");
-
+            $this->jsonSuccess(['redirect' => APP_URL . '/shares'], 'Share purchase request submitted for approval.');
         } catch (\Exception $e) {
             $this->db->rollback();
-            $this->jsonError('Approval failed: ' . $e->getMessage(), null, 500);
+            // ENFORCE: Notify admins of failure
+            $this->notifyAdmins('share_purchase_failed', 'Share Purchase Request Failed', "Failed to submit share purchase request for member {$member['member_no']}: " . $e->getMessage());
+            $this->jsonError('Failed to submit request: ' . $e->getMessage(), null, 500);
         }
     }
 
-    // ── Reject share transaction ──────────────────────────────────
-    public function rejectTransaction(int $id): void
+    public function member(int $id): void
     {
-        $this->auth->requirePermission('shares.approve');
-        $this->verifyCsrf();
+        // ENFORCE: Centralized Scope Gatekeeper
+        $perms = ['global' => 'shares.view', 'group' => 'groups.view_members', 'personal' => 'shares.view_own'];
+        $this->requireScopeAccess($perms, 'You do not have permission to view shares.');
+        
+        $scope = $this->resolveDataScope($perms);
 
-        $notes = trim($this->getPost()['rejection_notes'] ?? '');
-        if (empty($notes)) {
-            $this->jsonError('Rejection notes are mandatory.', null, 422);
+        $member = $this->db->fetchOne("SELECT * FROM members WHERE id = ?", [$id]);
+        if (!$member) {
+            $this->flash('error', 'Member not found.');
+            $this->redirect('/shares');
         }
 
-        $txn = $this->db->fetchOne("SELECT * FROM share_transactions WHERE id=?", [$id]);
-        if (!$txn || $txn['status'] !== 'pending') {
-            $this->jsonError('Transaction not found or already processed.', null, 400);
+        // ENFORCE: IDOR Guard
+        if (!$this->canAccessMemberRecord($member['id'])) {
+            $this->flash('error', 'You do not have permission to view this account.');
+            $this->redirect('/dashboard');
         }
 
-        $this->db->execute("
-            UPDATE share_transactions
-            SET status='rejected', approved_by=?, approved_at=NOW(), approval_notes=?, updated_at=NOW()
-            WHERE id=?
-        ", [$_SESSION['user_id'], $notes, $id]);
+        // ENFORCE: Pass scope to model to filter data
+        $holding    = $this->model->getByMember($id, $scope);
+        $privileges = $this->model->getLoanPrivileges($id, 10.0, 3); 
+        $config     = $this->model->getConfig();
+        
+        ['page' => $page, 'limit' => $limit] = $this->getPaginationParams();
+        $txns = $this->model->getTransactions($page, $limit, ['member_id' => $id], $scope);
 
-        $approvalRecord = $this->approval->getForRecord('share_transaction', $id);
-        if ($approvalRecord) {
-            $this->approval->reject($approvalRecord['id'], $_SESSION['user_id'], $notes);
-        }
+        // ENFORCE: Audit log for viewing member shares
+        $this->logAudit('member_shares_viewed', 'shares', $id, 'Member', "Viewed shares for member #{$id}");
 
-        $this->auth->logAudit($_SESSION['user_id'], 'share_transaction_rejected', 'shares',
-            $id, 'ShareTransaction', "Rejected {$txn['txn_ref']}: {$notes}");
-
-        $this->jsonSuccess(null, "Share transaction {$txn['txn_ref']} rejected.");
-    }
-
-    // ── Member share profile ──────────────────────────────────────
-    public function memberShares(int $memberId): void
-    {
-        $this->auth->requirePermission('shares.view');
-
-        $member    = $this->db->fetchOne("SELECT * FROM members WHERE id=? AND deleted_at IS NULL", [$memberId]);
-        if (!$member) { $this->flash('error','Member not found.'); $this->redirect('/shares'); }
-
-        $holding   = $this->model->getByMember($memberId);
-        $txns      = $this->model->getTransactions(1, 50, ['member_id' => $memberId]);
-        $config    = $this->model->getConfig();
-        $privileges = $this->model->getLoanPrivileges($memberId, (float)$this->getSettings()['loan_interest_rate'] ?? 10, 3);
-        $settings  = $this->getSettings();
-        $unreadNotifications = $this->getUnread();
-
-        $pageTitle   = 'Shares — ' . $member['first_name'] . ' ' . $member['last_name'];
-        $activePage  = 'shares';
-        $breadcrumbs = ['Shares' => APP_URL.'/shares', $member['first_name'] => null];
-
-        $this->view('shares/member', compact(
-            'member','holding','txns','config','privileges','settings','pageTitle','activePage','breadcrumbs','unreadNotifications'
+        $this->view('shares/member', array_merge(
+            $this->prepareViewData('Shares — ' . ($member['first_name'] . ' ' . $member['last_name']), 'shares'),
+            ['member' => $member, 'holding' => $holding, 'privileges' => $privileges, 'config' => $config, 'txns' => $txns]
         ));
     }
 
-    // ── Share analytics/reports ───────────────────────────────────
     public function report(): void
     {
-        $this->auth->requirePermission('shares.view');
+        // ENFORCE: Centralized Scope Gatekeeper
+        $perms = ['global' => 'shares.view', 'group' => 'groups.view_members', 'personal' => 'shares.view_own'];
+        $this->requireScopeAccess($perms, 'You do not have permission to view share reports.');
+        
+        $scope = $this->resolveDataScope($perms);
 
-        $stats    = $this->model->getSummaryStats();
-        $monthly  = $this->model->getMonthlyReport();
-        $config   = $this->model->getConfig();
-        $txns     = $this->model->getTransactions(1, 50, ['status' => $this->getQuery('status', '')]);
-        $settings = $this->getSettings();
-        $unreadNotifications = $this->getUnread();
+        // ENFORCE: Pass scope to model to filter data
+        $stats   = $this->model->getSummaryStats($scope);
+        $monthly = $this->model->getMonthlyReport($scope);
+        $config  = $this->model->getConfig();
+        
+        ['page' => $page, 'limit' => $limit] = $this->getPaginationParams();
+        $filters = ['status' => $this->getQuery('status', '')];
+        $txns = $this->model->getTransactions($page, $limit, $filters, $scope);
 
-        $pageTitle   = 'Share Analytics';
-        $activePage  = 'shares';
-        $breadcrumbs = ['Shares' => APP_URL.'/shares', 'Analytics' => null];
+        // ENFORCE: Audit log for viewing report
+        $this->logAudit('share_report_viewed', 'shares', null, null, "Viewed share analytics report");
 
-        $this->view('shares/report', compact(
-            'stats','monthly','config','txns','settings','pageTitle','activePage','breadcrumbs','unreadNotifications'
+        $this->view('shares/report', array_merge(
+            $this->prepareViewData('Share Analytics', 'shares'),
+            ['stats' => $stats, 'monthly' => $monthly, 'config' => $config, 'txns' => $txns, 'filters' => $filters]
         ));
     }
 
-    // ── Share config update ───────────────────────────────────────
     public function updateConfig(): void
     {
         $this->auth->requirePermission('shares.manage');
         $this->verifyCsrf();
-
+        
         $data = $this->getPost();
-        $this->model->updateConfig([...$data, 'updated_by' => $_SESSION['user_id']]);
-        $this->auth->logAudit($_SESSION['user_id'], 'share_config_updated', 'shares', 1, 'ShareConfig', 'Share configuration updated');
-        $this->jsonSuccess(null, 'Share configuration updated successfully.');
+        $config = [
+            'par_value'             => (float)($data['par_value'] ?? 1000),
+            'loan_rate_discount'    => (float)($data['loan_rate_discount'] ?? 2),
+            'loan_multiplier_bonus' => (int)($data['loan_multiplier_bonus'] ?? 1),
+            'dividend_rate'         => (float)($data['dividend_rate'] ?? 5),
+            'min_shares'            => (int)($data['min_shares'] ?? 1),
+            'max_shares_per_member' => (int)($data['max_shares_per_member'] ?? 1000),
+            'is_transferable'       => isset($data['is_transferable']) ? 1 : 0,
+            'updated_by'            => $_SESSION['user_id'],
+        ];
+
+        $this->db->beginTransaction();
+        try {
+            $oldConfig = $this->model->getConfig();
+            $this->model->updateConfig($config);
+            
+            $this->logAudit('share_config_updated', 'shares', null, 'ShareConfig', 
+                "Share configuration updated", json_encode($oldConfig), json_encode($config));
+
+            // ENFORCE: Notify admins of system-level share config changes
+            $this->notifyAdmins('share_config_updated', 'Share Configuration Updated', 
+                "The global share configuration (par value, discounts, etc.) was updated by an administrator.");
+
+            $this->db->commit();
+            $this->jsonSuccess(['redirect' => APP_URL . '/shares'], 'Configuration updated successfully.');
+        } catch (\Exception $e) {
+            $this->db->rollback();
+            // ENFORCE: Notify admins of failure
+            $this->notifyAdmins('share_config_update_failed', 'Share Configuration Update Failed', 
+                "Failed to update share configuration: " . $e->getMessage());
+            $this->jsonError('Failed to update configuration: ' . $e->getMessage(), null, 500);
+        }
     }
 
-    private function getSettings(): array
+    // ── HELPERS ────────────────────────────────────────────────────
+
+    /**
+     * ENFORCE: Notify all admins via multi-channel dispatch
+     */
+    private function notifyAdmins(string $type, string $title, string $message): void
     {
-        return array_column($this->db->fetchAll("SELECT `key`,`value` FROM settings"), 'value', 'key');
-    }
-    private function getUnread(): int
-    {
-        return (int)$this->db->fetchColumn("SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0", [$_SESSION['user_id']]);
+        $admins = $this->db->fetchAll("
+            SELECT DISTINCT u.id 
+            FROM users u 
+            JOIN role_permissions rp ON rp.role_id = u.role_id 
+            JOIN permissions p ON p.id = rp.permission_id 
+            WHERE p.slug IN ('shares.manage', 'shares.view') AND u.status = 'active'
+        ");
+        foreach ($admins as $admin) {
+            $this->notif->dispatch((int)$admin['id'], $type, $title, $message);
+        }
     }
 }

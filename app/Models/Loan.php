@@ -14,35 +14,48 @@ class Loan extends BaseModel
     protected bool $useSoftDelete = true;
 
     /**
-     * Generate the next sequential loan number (e.g. LN-2025-00123).
+     * Generate the next sequential loan number atomically.
+     * Caller MUST wrap this in a transaction.
      */
     public function generateLoanNo(): string
     {
-        $year = date('Y');
-        $last = $this->db->fetchColumn(
-            "SELECT loan_no FROM loans WHERE loan_no LIKE ? ORDER BY id DESC LIMIT 1",
-            ["LN-{$year}-%"]
-        );
-
-        $seq = 1;
-        if ($last && preg_match('/(\d+)$/', $last, $m)) {
-            $seq = (int)$m[1] + 1;
-        }
-
-        return "LN-{$year}-" . str_pad($seq, 5, '0', STR_PAD_LEFT);
+        return \App\Helpers\LoanSequence::nextFormatted();
     }
 
     /**
-     * Calculate loan financials (interest, schedule totals, monthly installment).
+     * Calculate loan financials with optional shareholder privileges.
      *
-     * @param float  $principal    Principal amount
-     * @param float  $rate         Annual interest rate as percentage
-     * @param int    $termMonths   Loan term in months
-     * @param string $interestType flat | reducing_balance | compound
+     * @param float  $principal     Principal amount
+     * @param float  $baseRate      Annual interest rate as percentage
+     * @param int    $termMonths    Loan term in months
+     * @param string $interestType  flat | reducing_balance | compound
+     * @param bool   $isShareholder Is the member a shareholder?
+     * @param int    $sharesHeld    Number of shares held (for tiered discounts)
      * @return array Calculated financial figures
      */
-    public function calculateLoan(float $principal, float $rate, int $termMonths, string $interestType): array
-    {
+    public function calculateLoan(
+        float $principal, 
+        float $baseRate, 
+        int $termMonths, 
+        string $interestType,
+        bool $isShareholder = false,
+        int $sharesHeld = 0
+    ): array {
+        $rate = $baseRate;
+        
+        // Apply shareholder privileges if applicable
+        if ($isShareholder) {
+            $config = $this->db->fetchOne("SELECT loan_rate_discount FROM share_config ORDER BY id DESC LIMIT 1");
+            $discount = (float)($config['loan_rate_discount'] ?? 0);
+            $rate = max(0, $rate - $discount);
+            
+            // Additional 1% discount for major shareholders (>= 100 shares)
+            if ($sharesHeld >= 100) {
+                $rate = max(0, $rate - 1.00);
+            }
+            $rate = round($rate, 2);
+        }
+
         $monthlyRate = $rate / 100 / 12;
 
         switch ($interestType) {
@@ -56,7 +69,6 @@ class Loan extends BaseModel
                 if ($monthlyRate == 0) {
                     $monthlyInstallment = $principal / $termMonths;
                 } else {
-                    // Standard reducing balance EMI formula
                     $factor = pow(1 + $monthlyRate, $termMonths);
                     $monthlyInstallment = $principal * ($monthlyRate * $factor) / ($factor - 1);
                 }
@@ -80,21 +92,11 @@ class Loan extends BaseModel
             'total_payable'       => round($totalPayable, 2),
             'monthly_installment' => round($monthlyInstallment, 2),
             'term_months'         => $termMonths,
-            'interest_rate'       => $rate,
+            'interest_rate'       => $rate, // Returns adjusted rate if shareholder
             'interest_type'       => $interestType,
         ];
     }
 
-    /**
-     * Generate repayment schedule for a loan.
-     *
-     * @param int    $loanId           Loan database ID
-     * @param float  $principal        Principal amount
-     * @param float  $rate             Annual interest rate %
-     * @param int    $termMonths       Loan term in months
-     * @param string $interestType     Interest calculation method
-     * @param string $firstRepayDate   First repayment due date (Y-m-d)
-     */
     public function generateRepaymentSchedule(
         int $loanId,
         float $principal,
@@ -103,16 +105,11 @@ class Loan extends BaseModel
         string $interestType,
         string $firstRepayDate
     ): void {
-        // Clear existing schedule for this loan
-        $this->db->execute(
-            "DELETE FROM loan_repayment_schedules WHERE loan_id = ?",
-            [$loanId]
-        );
+        $this->db->execute("DELETE FROM loan_repayment_schedules WHERE loan_id = ?", [$loanId]);
 
         $monthlyRate    = $rate / 100 / 12;
         $balance        = $principal;
         $currentDate    = new \DateTime($firstRepayDate);
-
         $calc           = $this->calculateLoan($principal, $rate, $termMonths, $interestType);
         $monthlyPayment = $calc['monthly_installment'];
 
@@ -122,21 +119,17 @@ class Loan extends BaseModel
                     $interestDue  = ($principal * ($rate / 100)) / 12;
                     $principalDue = ($principal / $termMonths);
                     break;
-
                 case 'reducing_balance':
                     $interestDue  = $balance * $monthlyRate;
                     $principalDue = $monthlyPayment - $interestDue;
                     if ($i === $termMonths) {
-                        // Last installment clears remaining balance
                         $principalDue = $balance;
                     }
                     break;
-
                 case 'compound':
                     $interestDue  = $balance * $monthlyRate;
                     $principalDue = $monthlyPayment - $interestDue;
                     break;
-
                 default:
                     $interestDue  = 0;
                     $principalDue = $monthlyPayment;
@@ -157,9 +150,6 @@ class Loan extends BaseModel
         }
     }
 
-    /**
-     * Get detailed loan with member info, product info, and repayment progress.
-     */
     public function getDetail(int $loanId): ?array
     {
         $loan = $this->db->fetchOne("
@@ -181,26 +171,16 @@ class Loan extends BaseModel
 
         $loan['schedule']   = $this->getSchedule($loanId);
         $loan['guarantors'] = $this->getGuarantors($loanId);
-
         return $loan;
-    }
+        }
 
-    /**
-     * Get repayment schedule for a loan.
-     */
     public function getSchedule(int $loanId): array
     {
-        return $this->db->fetchAll("
-            SELECT * FROM loan_repayment_schedules
-            WHERE loan_id = ?
-            ORDER BY installment_no ASC
-        ", [$loanId]);
+        return $this->db->fetchAll("SELECT * FROM loan_repayment_schedules WHERE loan_id = ? ORDER BY installment_no ASC", [$loanId]);
     }
 
-    /**
-     * Get guarantors for a loan.
-     */
     public function getGuarantors(int $loanId): array
+    // validate guarantor audit COMPLIANCE_AUDIT.md (5. Loan Guarantor Management) show message if not eligible and reject guarantor
     {
         return $this->db->fetchAll("
             SELECT lg.*, CONCAT(m.first_name,' ',m.last_name) AS guarantor_name, m.phone, m.member_no
@@ -210,48 +190,26 @@ class Loan extends BaseModel
         ", [$loanId]);
     }
 
-    /**
-     * Get paginated loan list with filters.
-     */
     public function getList(int $page = 1, int $limit = 25, array $filters = []): array
     {
         $where  = ['l.deleted_at IS NULL'];
         $params = [];
 
-        if (!empty($filters['status'])) {
-            $where[]  = 'l.status = ?';
-            $params[] = $filters['status'];
-        }
-        if (!empty($filters['member_id'])) {
-            $where[]  = 'l.member_id = ?';
-            $params[] = $filters['member_id'];
-        }
-        if (!empty($filters['product_id'])) {
-            $where[]  = 'l.loan_product_id = ?';
-            $params[] = $filters['product_id'];
-        }
+        if (!empty($filters['status'])) { $where[] = 'l.status = ?'; $params[] = $filters['status']; }
+        if (!empty($filters['member_id'])) { $where[] = 'l.member_id = ?'; $params[] = $filters['member_id']; }
+        if (!empty($filters['product_id'])) { $where[] = 'l.loan_product_id = ?'; $params[] = $filters['product_id']; }
         if (!empty($filters['search'])) {
-            $like     = '%' . $filters['search'] . '%';
-            $where[]  = "(l.loan_no LIKE ? OR CONCAT(m.first_name,' ',m.last_name) LIKE ? OR m.member_no LIKE ?)";
-            $params   = array_merge($params, [$like, $like, $like]);
+            $like = '%' . $filters['search'] . '%';
+            $where[] = "(l.loan_no LIKE ? OR CONCAT(m.first_name,' ',m.last_name) LIKE ? OR m.member_no LIKE ?)";
+            $params = array_merge($params, [$like, $like, $like]);
         }
-        if (!empty($filters['date_from'])) {
-            $where[]  = 'l.application_date >= ?';
-            $params[] = $filters['date_from'];
-        }
-        if (!empty($filters['date_to'])) {
-            $where[]  = 'l.application_date <= ?';
-            $params[] = $filters['date_to'];
-        }
+        if (!empty($filters['date_from'])) { $where[] = 'l.application_date >= ?'; $params[] = $filters['date_from']; }
+        if (!empty($filters['date_to'])) { $where[] = 'l.application_date <= ?'; $params[] = $filters['date_to']; }
 
         $whereSql = 'WHERE ' . implode(' AND ', $where);
         $offset   = ($page - 1) * $limit;
 
-        $total = (int)$this->db->fetchColumn(
-            "SELECT COUNT(*) FROM loans l JOIN members m ON m.id = l.member_id {$whereSql}",
-            $params
-        );
-
+        $total = (int)$this->db->fetchColumn("SELECT COUNT(*) FROM loans l JOIN members m ON m.id = l.member_id {$whereSql}", $params);
         $data = $this->db->fetchAll("
             SELECT l.id, l.loan_no, l.principal_amount, l.total_payable, l.amount_paid,
                    l.balance_outstanding, l.term_months, l.interest_rate, l.status,
@@ -266,18 +224,9 @@ class Loan extends BaseModel
             LIMIT {$limit} OFFSET {$offset}
         ", $params);
 
-        return [
-            'data'      => $data,
-            'total'     => $total,
-            'page'      => $page,
-            'per_page'  => $limit,
-            'last_page' => (int)ceil($total / $limit),
-        ];
+        return ['data' => $data, 'total' => $total, 'page' => $page, 'per_page' => $limit, 'last_page' => (int)ceil($total / $limit)];
     }
 
-    /**
-     * Loan portfolio statistics.
-     */
     public function getStats(): array
     {
         return $this->db->fetchOne("
@@ -295,9 +244,6 @@ class Loan extends BaseModel
         ");
     }
 
-    /**
-     * Mark overdue repayment installments (run via scheduler).
-     */
     public function markOverdueInstallments(): int
     {
         return $this->db->execute("

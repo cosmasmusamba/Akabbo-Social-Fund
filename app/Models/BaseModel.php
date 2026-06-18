@@ -8,7 +8,9 @@ use Database;
  * Base Model
  *
  * Abstract base class providing common ORM-like database operations
- * for all models. Enforces prepared statements for SQL injection prevention.
+ * for all models. Enforces prepared statements for SQL injection prevention
+ * and standardized Trash & Recovery handling.
+ to be inherited by all domain models.
  */
 abstract class BaseModel
 {
@@ -23,12 +25,6 @@ abstract class BaseModel
         $this->db = Database::getInstance();
     }
 
-    /**
-     * Find a single record by primary key.
-     *
-     * @param int $id Record ID
-     * @return array|null Record data or null if not found
-     */
     public function find(int $id): ?array
     {
         $sql = "SELECT * FROM `{$this->table}` WHERE `{$this->primaryKey}` = ?";
@@ -38,9 +34,6 @@ abstract class BaseModel
         return $this->db->fetchOne($sql, [$id]);
     }
 
-    /**
-     * Find a single record by a specific column value.
-     */
     public function findBy(string $column, mixed $value): ?array
     {
         $sql = "SELECT * FROM `{$this->table}` WHERE `{$column}` = ?";
@@ -51,12 +44,6 @@ abstract class BaseModel
         return $this->db->fetchOne($sql, [$value]);
     }
 
-    /**
-     * Retrieve all records with optional ordering.
-     *
-     * @param string $orderBy Column to sort by
-     * @param string $dir     Sort direction (ASC|DESC)
-     */
     public function all(string $orderBy = 'id', string $dir = 'ASC'): array
     {
         $dir = strtoupper($dir) === 'DESC' ? 'DESC' : 'ASC';
@@ -68,17 +55,6 @@ abstract class BaseModel
         return $this->db->fetchAll($sql);
     }
 
-    /**
-     * Paginate records.
-     *
-     * @param int    $page    Current page number (1-indexed)
-     * @param int    $limit   Records per page
-     * @param string $where   Optional WHERE clause (without the WHERE keyword)
-     * @param array  $params  Bind parameters for the WHERE clause
-     * @param string $orderBy Column to sort by
-     * @param string $dir     Sort direction
-     * @return array ['data' => [], 'total' => int, 'page' => int, 'last_page' => int]
-     */
     public function paginate(
         int $page = 1,
         int $limit = DEFAULT_PAGE_SIZE,
@@ -117,12 +93,6 @@ abstract class BaseModel
         ];
     }
 
-    /**
-     * Insert a new record.
-     *
-     * @param array $data Associative array of column => value
-     * @return int Last inserted ID
-     */
     public function create(array $data): int
     {
         if ($this->useTimestamps) {
@@ -137,13 +107,6 @@ abstract class BaseModel
         return (int) $this->db->insert($sql, array_values($data));
     }
 
-    /**
-     * Update an existing record.
-     *
-     * @param int   $id   Primary key value
-     * @param array $data Columns to update
-     * @return int Affected rows
-     */
     public function update(int $id, array $data): int
     {
         if ($this->useTimestamps) {
@@ -157,14 +120,31 @@ abstract class BaseModel
     }
 
     /**
-     * Soft delete a record (marks deleted_at timestamp).
-     * Falls back to hard delete if soft deletes are not enabled.
+     * Get the current record data (useful for audit snapshots before update/delete).
      */
-    public function delete(int $id): int
+    public function getOldValues(int $id): ?array
+    {
+        return $this->find($id);
+    }
+
+    /**
+     * Soft delete a record. Automatically inserts a snapshot into the `trash` table
+     * for compliance and recovery evidence before marking as deleted.
+     */
+    public function delete(int $id, ?int $deletedBy = null): int
     {
         if ($this->useSoftDelete) {
+            $oldData = $this->find($id);
+            if ($oldData) {
+                $this->db->execute(
+                    "INSERT INTO trash (record_type, record_id, record_data, deleted_by, deleted_at) 
+                     VALUES (?, ?, ?, ?, NOW())",
+                    [$this->table, $id, json_encode($oldData), $deletedBy ?? ($_SESSION['user_id'] ?? null)]
+                );
+            }
             return $this->update($id, ['deleted_at' => date('Y-m-d H:i:s')]);
         }
+        
         return $this->db->execute(
             "DELETE FROM `{$this->table}` WHERE `{$this->primaryKey}` = ?",
             [$id]
@@ -172,22 +152,35 @@ abstract class BaseModel
     }
 
     /**
-     * Restore a soft-deleted record.
+     * Restore a soft-deleted record and update the trash record.
      */
-    public function restore(int $id): int
+    public function restore(int $id, ?int $restoredBy = null): int
     {
         if (!$this->useSoftDelete) {
             return 0;
         }
-        return $this->db->execute(
-            "UPDATE `{$this->table}` SET `deleted_at` = NULL, `updated_at` = ? WHERE `{$this->primaryKey}` = ?",
-            [date('Y-m-d H:i:s'), $id]
-        );
+
+        $this->db->beginTransaction();
+        try {
+            $this->db->execute(
+                "UPDATE `{$this->table}` SET `deleted_at` = NULL, `updated_at` = ? WHERE `{$this->primaryKey}` = ?",
+                [date('Y-m-d H:i:s'), $id]
+            );
+
+            $this->db->execute(
+                "UPDATE trash SET restored_at = NOW(), restored_by = ? WHERE record_type = ? AND record_id = ?",
+                [$restoredBy ?? ($_SESSION['user_id'] ?? null), $this->table, $id]
+            );
+
+            $this->db->commit();
+            return 1;
+        } catch (\Exception $e) {
+            $this->db->rollback();
+            error_log("[BaseModel::restore] Failed for {$this->table} ID {$id}: " . $e->getMessage());
+            return 0;
+        }
     }
 
-    /**
-     * Count records matching optional conditions.
-     */
     public function count(string $where = '', array $params = []): int
     {
         $whereSql = '';
@@ -205,9 +198,6 @@ abstract class BaseModel
         );
     }
 
-    /**
-     * Check if a record exists by column value.
-     */
     public function exists(string $column, mixed $value, ?int $excludeId = null): bool
     {
         $sql    = "SELECT COUNT(*) FROM `{$this->table}` WHERE `{$column}` = ?";
@@ -221,18 +211,11 @@ abstract class BaseModel
         return (int) $this->db->fetchColumn($sql, $params) > 0;
     }
 
-    /**
-     * Run a raw query against this model's database connection.
-     * Useful for complex joins or aggregations.
-     */
     public function raw(string $sql, array $params = []): array
     {
         return $this->db->fetchAll($sql, $params);
     }
 
-    /**
-     * Run a raw query and fetch a single row.
-     */
     public function rawOne(string $sql, array $params = []): ?array
     {
         return $this->db->fetchOne($sql, $params);

@@ -14,23 +14,6 @@ class Member extends BaseModel
     protected bool $useSoftDelete = true;
 
     /**
-     * Generate the next sequential member number (e.g. AKB-00345).
-     */
-    public function generateMemberNo(): string
-    {
-        $last = $this->db->fetchColumn(
-            "SELECT member_no FROM members ORDER BY id DESC LIMIT 1"
-        );
-
-        $seq = 1;
-        if ($last && preg_match('/(\d+)$/', $last, $m)) {
-            $seq = (int)$m[1] + 1;
-        }
-
-        return 'AKB-' . str_pad($seq, 5, '0', STR_PAD_LEFT);
-    }
-
-    /**
      * Get full member profile including savings and loan totals.
      */
     public function getProfile(int $memberId): ?array
@@ -166,5 +149,37 @@ class Member extends BaseModel
             GROUP BY m.id
             ORDER BY overdue_amount DESC
         ");
+    }
+
+    /**
+     * Get members who registered X days ago but still have kyc_verified = 0
+     */
+    public function getKycPendingMembers(int $days): array
+    {
+        return $this->db->fetchAll(
+            "SELECT id, member_no, first_name, last_name, user_id, membership_date 
+             FROM members 
+             WHERE kyc_verified = 0 
+             AND status = 'active' 
+             AND deleted_at IS NULL 
+             AND membership_date <= DATE_SUB(CURDATE(), INTERVAL ? DAY)",
+            [$days]
+        );
+    }
+    
+    /**
+     and no transactions in the last X days
+     */
+    public function getInactiveMembers(int $days): array
+    {
+        return $this->db->fetchAll(
+            "SELECT m.id, m.first_name, m.last_name, m.user_id 
+             FROM members m
+             LEFT JOIN transactions t ON t.member_id = m.id AND t.transaction_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+             WHERE m.status = 'active' 
+             AND m.deleted_at IS NULL 
+             AND t.id IS NULL",
+            [$days]
+        );
     }
 }

@@ -5,7 +5,7 @@ namespace App\Models;
  * AKABBO SOCIAL FUND — Approval Model
  *
  * Workflow engine for all financial activities requiring
- * authorised sign-off: withdrawals, transfers, disbursements,
+ * authorised sign-off: loans, waivers, withdrawals, transfers, disbursements,
  * share transactions and expenses.
  */
 class Approval extends BaseModel

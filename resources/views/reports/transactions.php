@@ -1,4 +1,12 @@
-<?php use App\Helpers\Format; $pageTitle='Transactions Report'; $activePage='reports'; $breadcrumbs=['Reports'=>APP_URL.'/reports','Transactions'=>null]; ?>
+<?php 
+use App\Helpers\Format; 
+$pageTitle = 'Loans Report'; // or 'Transactions Report'
+$activePage = 'reports'; 
+$breadcrumbs = ['Reports' => APP_URL.'/reports', 'Loans' => null]; // or 'Transactions'
+
+// SAFE FILTERS INITIALIZATION
+$filters = $filters ?? ['from' => date('Y-m-01'), 'to' => date('Y-m-d'), 'status' => '', 'type' => ''];
+?>
 <div class="flex items-center justify-between mb-5">
   <div><h1 class="text-xl font-bold text-slate-800">Transactions Report</h1><p class="text-sm text-slate-400">Period: <?= Format::date($filters['from']) ?> — <?= Format::date($filters['to']) ?></p></div>
   <a href="?<?= http_build_query(array_merge($_GET,['export'=>'1'])) ?>" class="btn btn-secondary btn-sm"><i class="fa-solid fa-file-csv text-green-600"></i> Export</a>

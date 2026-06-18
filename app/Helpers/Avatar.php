@@ -129,11 +129,16 @@ class Avatar
     public static function favicon(array $settings = []): string
     {
         $favicon = $settings['org_favicon'] ?? null;
-        
         if ($favicon) {
             return APP_URL . '/storage/uploads/logos/' . htmlspecialchars($favicon);
         }
-
-        return APP_URL . '/public/favicon.ico';
+        
+        // ✅ FIX: Fallback to org_logo if no specific favicon is set
+        $logo = $settings['org_logo'] ?? null;
+        if ($logo) {
+            return APP_URL . '/storage/uploads/logos/' . htmlspecialchars($logo);
+        }
+        
+        return APP_URL . '/public/assets/img/favicon.ico'; // Ensure this default exists
     }
 }

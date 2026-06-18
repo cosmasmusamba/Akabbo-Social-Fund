@@ -111,3 +111,16 @@ spl_autoload_register(function (string $class): void {
         }
     }
 });
+
+/* How to Set Up the Automated Cron Job
+
+Once saved correctly, you can trigger the daily reminders manually via your browser or Postman by visiting:
+http://localhost/akabbo/cron/run-daily?secret=your_super_secret_cron_key_change_this
+
+ **On Linux/macOS (via crontab -e):
+# Run daily at 2:00 AM
+# 0 2 * * * /usr/bin/php /path/to/your/akabbo/public/index.php cron run-daily > /dev/null 2>&1
+
+** On Windows (Task Scheduler) or Shared Hosting (cPanel):
+# Use a web request with the secret token: curl "https://yourdomain.com/akabbo/cron/run-daily?secret=your_super_secret_cron_key_change_this"
+*/

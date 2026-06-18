@@ -1,12 +1,15 @@
 akabbo/
 ├── COMPLIANCE_AUDIT.md
 ├── README.md
+├── akabbo_structure.txt
 ├── app
 │   ├── Controllers
+│   │   ├── AccessControlController.php
 │   │   ├── Approvalcontroller.php
 │   │   ├── AuditController.php
 │   │   ├── AuthController.php
 │   │   ├── BaseController.php
+│   │   ├── CronController.php
 │   │   ├── DashboardController.php
 │   │   ├── Expensecontroller.php
 │   │   ├── Fundtransfercontroller.php
@@ -28,8 +31,11 @@ akabbo/
 │   ├── Helpers
 │   │   ├── Avatar.php
 │   │   ├── Format.php
+│   │   ├── LoanSequence.php
 │   │   ├── Membersequence.php
-│   │   └── Security.php
+│   │   ├── SavingsAccountSequence.php
+│   │   ├── Security.php
+│   │   └── StorageHelper.php
 │   ├── Models
 │   │   ├── Approval.php
 │   │   ├── BaseModel.php
@@ -38,18 +44,20 @@ akabbo/
 │   │   ├── Loan.php
 │   │   ├── LoanProduct.php
 │   │   ├── Member.php
+│   │   ├── Notification.php
+│   │   ├── Permission.php
 │   │   ├── SavingsAccount.php
 │   │   ├── Share.php
 │   │   ├── Socialfundfee.php
 │   │   └── Transaction.php
 │   └── Services
-│       └── AuthService.php
+│       ├── AuthService.php
+│       ├── NotificationService.php
+│       └── ReminderService.php
 ├── config
 │   ├── config.php
 │   └── database.php
 ├── database
-│   ├── migration_branding.sql
-│   ├── migration_patch3.sql
 │   └── schema.sql
 ├── public
 │   ├── assets
@@ -63,6 +71,11 @@ akabbo/
 │   ├── layouts
 │   │   └── main.php
 │   └── views
+│       ├── access-control
+│       │   └── index.php
+│       ├── approvals
+│       │   ├── index.php
+│       │   └── show.php
 │       ├── audit
 │       │   ├── index.php
 │       │   └── show.php
@@ -74,6 +87,11 @@ akabbo/
 │       │   └── index.php
 │       ├── errors
 │       │   └── 404.php
+│       ├── expenses
+│       │   ├── create.php
+│       │   ├── edit.php
+│       │   ├── index.php
+│       │   └── show.php
 │       ├── groups
 │       │   ├── create.php
 │       │   ├── edit.php
@@ -116,7 +134,9 @@ akabbo/
 │       │   └── index.php
 │       ├── shares
 │       │   ├── create.php
-│       │   └── index.php
+│       │   ├── index.php
+│       │   ├── member.php
+│       │   └── report.php
 │       ├── social-fund
 │       │   ├── create.php
 │       │   ├── index.php
@@ -125,7 +145,9 @@ akabbo/
 │       │   ├── index.php
 │       │   └── show.php
 │       ├── transfers
-│       │   └── index.php
+│       │   ├── create.php
+│       │   ├── index.php
+│       │   └── show.php
 │       ├── trash
 │       │   └── index.php
 │       └── users
@@ -144,6 +166,8 @@ akabbo/
         │   ├── avatar_6a1efa8d952e4.png
         │   ├── avatar_6a1f08e0e14a0.jpg
         │   ├── avatar_6a287510b769c.jpg
+        │   ├── avatar_6a2cbd57ca7192.77062446.png
+        │   ├── avatar_6a2ecf2d8ae259.47793790.jpg
         │   ├── group_6a1fff797de6d.jpeg
         │   ├── group_6a2000f6912d9.jpeg
         │   └── group_6a2001f720ffd.jpeg
@@ -153,8 +177,12 @@ akabbo/
         │   ├── id_back_6a1f08e0e2aca.jpg
         │   ├── id_back_6a28722691bfb.jpg
         │   ├── id_back_6a28723b67bf4.jpg
+        │   ├── id_back_6a2cbd58b76504.79445381.pdf
+        │   ├── id_back_6a2ecf2d8d1f11.05022623.jpg
         │   ├── id_front_6a1ecfd0a61e9.jpg
         │   ├── id_front_6a1f08e0e1e36.jpg
         │   ├── id_front_6a28722690d91.jpg
-        │   └── id_front_6a28723b67956.jpg
+        │   ├── id_front_6a28723b67956.jpg
+        │   ├── id_front_6a2cbd58b6fc99.51043439.pdf
+        │   └── id_front_6a2ecf2d8c6ed0.44843267.jpg
         └── logos
